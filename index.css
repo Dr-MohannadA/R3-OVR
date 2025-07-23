@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(220, 13%, 13%);
+  --muted: hsl(210, 40%, 98%);
+  --muted-foreground: hsl(215, 16%, 46.9%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(220, 13%, 13%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(220, 13%, 13%);
+  --border: hsl(220, 13%, 91%);
+  --input: hsl(220, 13%, 91%);
+  --primary: hsl(198, 93%, 60%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(220, 14.3%, 95.9%);
+  --secondary-foreground: hsl(220, 9%, 46%);
+  --accent: hsl(220, 14.3%, 95.9%);
+  --accent-foreground: hsl(220, 9%, 46%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --ring: hsl(198, 93%, 60%);
+  --radius: 0.75rem;
+  
+  /* Healthcare Theme Colors */
+  --medical-blue: hsl(198, 93%, 60%);
+  --medical-blue-dark: hsl(198, 93%, 50%);
+  --medical-green: hsl(142, 76%, 36%);
+  --medical-orange: hsl(25, 95%, 53%);
+  --medical-red: hsl(0, 84%, 60%);
+  --surface: hsl(210, 11%, 96%);
+  --surface-hover: hsl(210, 11%, 93%);
+  
+  /* Status Colors - More Professional */
+  --status-open-bg: hsl(0, 100%, 97%);
+  --status-open-text: hsl(0, 91%, 40%);
+  --status-open-border: hsl(0, 100%, 90%);
+  
+  --status-review-bg: hsl(38, 100%, 97%);
+  --status-review-text: hsl(32, 81%, 40%);
+  --status-review-border: hsl(38, 100%, 85%);
+  
+  --status-closed-bg: hsl(138, 76%, 97%);
+  --status-closed-text: hsl(142, 76%, 36%);
+  --status-closed-border: hsl(138, 76%, 85%);
+  
+  /* Priority Colors */
+  --priority-high-bg: hsl(0, 100%, 97%);
+  --priority-high-text: hsl(0, 91%, 40%);
+  --priority-medium-bg: hsl(38, 100%, 97%);
+  --priority-medium-text: hsl(32, 81%, 40%);
+  --priority-low-bg: hsl(220, 14.3%, 95.9%);
+  --priority-low-text: hsl(220, 9%, 46%);
+}
+
+.dark {
+  --background: hsl(222, 84%, 4.9%);
+  --foreground: hsl(210, 40%, 98%);
+  --muted: hsl(217, 32%, 17%);
+  --muted-foreground: hsl(215, 16%, 56.9%);
+  --popover: hsl(222, 84%, 4.9%);
+  --popover-foreground: hsl(210, 40%, 98%);
+  --card: hsl(222, 84%, 4.9%);
+  --card-foreground: hsl(210, 40%, 98%);
+  --border: hsl(217, 32%, 17%);
+  --input: hsl(217, 32%, 17%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(222, 84%, 4.9%);
+  --secondary: hsl(217, 32%, 17%);
+  --secondary-foreground: hsl(210, 40%, 98%);
+  --accent: hsl(217, 32%, 17%);
+  --accent-foreground: hsl(210, 40%, 98%);
+  --destructive: hsl(0, 62%, 30%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --ring: hsl(212, 12%, 87%);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-muted;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+  
+  /* Smooth transitions */
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-lg hover:scale-[1.02];
+  }
+  
+  .button-hover {
+    @apply transition-all duration-150 hover:scale-105;
+  }
+  
+  /* Glass effect */
+  .glass {
+    backdrop-filter: blur(16px) saturate(180%);
+    background-color: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.125);
+  }
+  
+  /* Gradient backgrounds */
+  .gradient-bg {
+    background: linear-gradient(135deg, hsl(198, 60%, 70%) 0%, hsl(198, 60%, 65%) 100%);
+    position: relative;
+  }
+
+  .gradient-bg::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('/src/assets/hhc-logo.png') center center no-repeat;
+    background-size: 800px 800px;
+    opacity: 0.25;
+    z-index: 0;
+    pointer-events: none;
+  }
+  
+  .surface-gradient {
+    background: linear-gradient(135deg, hsl(0, 0%, 100%) 0%, hsl(210, 11%, 98%) 100%);
+    position: relative;
+  }
+
+  .surface-gradient::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('/src/assets/hhc-logo.png') center center no-repeat;
+    background-size: 600px 600px;
+    opacity: 0.15;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* Ensure content appears above watermarks */
+  .gradient-bg > *,
+  .surface-gradient > * {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@layer utilities {
+  .hero-gradient {
+    background: linear-gradient(135deg, hsl(207, 60%, 70%) 0%, hsl(207, 60%, 75%) 100%);
+  }
+  
+  .status-open {
+    background-color: var(--status-open-bg);
+    color: var(--status-open-text);
+  }
+  
+  .status-review {
+    background-color: var(--status-review-bg);
+    color: var(--status-review-text);
+  }
+  
+  .status-closed {
+    background-color: var(--status-closed-bg);
+    color: var(--status-closed-text);
+  }
+  
+  .priority-high {
+    background-color: var(--priority-high-bg);
+    color: var(--priority-high-text);
+  }
+  
+  .priority-medium {
+    background-color: var(--priority-medium-bg);
+    color: var(--priority-medium-text);
+  }
+  
+  .priority-low {
+    background-color: var(--priority-low-bg);
+    color: var(--priority-low-text);
+  }
+}

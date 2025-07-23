@@ -1,0 +1,765 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { Eye, Trash2, ClipboardList, MessageSquare, Upload, Flag, Clock, User } from "lucide-react";
+import { format } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
+import { isUnauthorizedError } from "@/lib/authUtils";
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+
+interface CommentWithUser {
+  id: number;
+  incidentId: number;
+  userId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    position?: string;
+  };
+}
+
+interface IncidentWithRelations {
+  id: number;
+  ovrId: string;
+  facilityId: number;
+  categoryId: number;
+  incidentDate: string;
+  incidentTime: string;
+  description: string;
+  levelOfHarm: string;
+  status: string;
+  priority: string;
+  isAnonymous: boolean;
+  reporterName?: string;
+  contactInfo?: string;
+  reportedById?: string;
+  assignedToId?: string;
+  isFlagged: boolean;
+  createdAt: string;
+  updatedAt: string;
+  facility: {
+    id: number;
+    nameEn: string;
+    nameAr: string;
+    code: string;
+  };
+  category: {
+    id: number;
+    name: string;
+  };
+  comments?: CommentWithUser[];
+}
+
+interface IncidentsTableProps {
+  facilityFilter: string;
+  categoryFilter: string;
+  statusFilter: string;
+}
+
+export function IncidentsTable({
+  facilityFilter,
+  categoryFilter,
+  statusFilter,
+}: IncidentsTableProps) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedIncident, setSelectedIncident] = useState<IncidentWithRelations | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [commentDialogOpen, setCommentDialogOpen] = useState(false);
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [proofDialogOpen, setProofDialogOpen] = useState(false);
+  const [newComment, setNewComment] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+
+  // Fetch comments for the selected incident
+  const { data: comments, refetch: refetchComments } = useQuery<CommentWithUser[]>({
+    queryKey: ['/api/incidents', selectedIncident?.id, 'comments'],
+    enabled: !!selectedIncident?.id && viewDialogOpen,
+  });
+
+  const { data: incidents, isLoading } = useQuery<IncidentWithRelations[]>({
+    queryKey: [
+      '/api/incidents',
+      { 
+        facilityId: facilityFilter !== 'all' ? facilityFilter : undefined,
+        categoryId: categoryFilter !== 'all' ? categoryFilter : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      }
+    ],
+  });
+
+  const updateIncidentMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: number; updates: any }) => {
+      await apiRequest('PATCH', `/api/incidents/${id}`, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/incidents/metrics'] });
+      setStatusDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "Incident updated successfully",
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to update incident",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addCommentMutation = useMutation({
+    mutationFn: async ({ incidentId, content }: { incidentId: number; content: string }) => {
+      await apiRequest('POST', `/api/incidents/${incidentId}/comments`, { content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/incidents', selectedIncident?.id, 'comments'] });
+      refetchComments();
+      setCommentDialogOpen(false);
+      setNewComment("");
+      toast({
+        title: "Success",
+        description: "Comment added successfully",
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to add comment",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const uploadProofMutation = useMutation({
+    mutationFn: async ({ incidentId, file }: { incidentId: number; file: File }) => {
+      const formData = new FormData();
+      formData.append('proof', file);
+      const response = await fetch(`/api/incidents/${incidentId}/proof`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error('Failed to upload proof');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/incidents'] });
+      setProofDialogOpen(false);
+      setProofFile(null);
+      toast({
+        title: "Success",
+        description: "Proof uploaded successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to upload proof",
+        variant: "destructive",
+      });
+    },
+  });
+
+
+
+  const deleteIncidentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest('DELETE', `/api/incidents/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/incidents/metrics'] });
+      toast({
+        title: "Success", 
+        description: "Incident deleted successfully",
+      });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to delete incident",
+        variant: "destructive",
+      });
+    },
+  });
+
+
+
+  const getStatusBadge = (status: string) => {
+    const variants = {
+      open: "destructive",
+      in_review: "secondary", 
+      closed: "default",
+    } as const;
+    
+    return (
+      <Badge variant={variants[status as keyof typeof variants] || "outline"}>
+        {status.toUpperCase().replace('_', ' ')}
+      </Badge>
+    );
+  };
+
+  const getPriorityBadge = (priority: string) => {
+    const variants = {
+      high: "destructive",
+      medium: "secondary",
+      low: "default", 
+    } as const;
+    
+    return (
+      <Badge variant={variants[priority as keyof typeof variants] || "outline"}>
+        {priority.toUpperCase()}
+      </Badge>
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <Card className="border-0 shadow-lg backdrop-blur-sm bg-white/20 border-white/30">
+        <CardHeader>
+          <CardTitle className="flex items-center text-foreground">
+            <ClipboardList className="w-5 h-5 mr-2 text-primary" />
+            Loading Incidents...
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-16 bg-muted rounded-lg"></div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card className="border-0 shadow-lg backdrop-blur-sm bg-white/20 border-white/30">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center text-foreground">
+              <ClipboardList className="w-5 h-5 mr-2 text-primary" />
+              All Incidents
+            </span>
+            <span className="text-sm font-medium text-muted-foreground bg-muted px-3 py-1 rounded-full">
+              {incidents?.length || 0} total
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {/* Desktop View */}
+          <div className="hidden lg:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>OVR ID</TableHead>
+                  <TableHead>Facility</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {incidents?.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-slate-500">
+                      No incidents found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  incidents?.map((incident) => (
+                    <TableRow key={incident.id}>
+                      <TableCell className="font-medium">{incident.ovrId}</TableCell>
+                      <TableCell>{incident.facility?.nameEn || 'Unknown'}</TableCell>
+                      <TableCell>{incident.category?.name}</TableCell>
+                      <TableCell>
+                        {format(new Date(incident.incidentDate), 'dd/MM/yyyy')}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(incident.status)}</TableCell>
+                      <TableCell>{getPriorityBadge(incident.priority)}</TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          {/* View Dialog */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedIncident(incident);
+                              setViewDialogOpen(true);
+                            }}
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <Label className="text-sm font-medium text-gray-600">Facility</Label>
+                                      <p className="text-sm mt-1">{selectedIncident.facility?.nameEn || 'Unknown'}</p>
+                                      <p className="text-sm text-gray-500">{selectedIncident.facility?.nameAr}</p>
+                                    </div>
+                                    <div>
+                                      <Label className="text-sm font-medium text-gray-600">Category</Label>
+                                      <p className="text-sm mt-1">{selectedIncident.category?.name}</p>
+                                    </div>
+                                    <div>
+                                      <Label className="text-sm font-medium text-gray-600">Date & Time</Label>
+                                      <p className="text-sm mt-1">
+                                        {format(new Date(selectedIncident.incidentDate), 'PPP')} at {selectedIncident.incidentTime}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <Label className="text-sm font-medium text-gray-600">Level of Harm</Label>
+                                      <p className="text-sm mt-1 capitalize">{selectedIncident.levelOfHarm.replace('_', ' ')}</p>
+                                    </div>
+                                    <div>
+                                      <Label className="text-sm font-medium text-gray-600">Status</Label>
+                                      <div className="mt-1">
+                                        <Badge variant={
+                                          selectedIncident.status === 'open' ? 'destructive' :
+                                          selectedIncident.status === 'under_review' ? 'secondary' :
+                                          selectedIncident.status === 'reviewed' ? 'default' : 'outline'
+                                        }>
+                                          {selectedIncident.status.toUpperCase().replace('_', ' ')}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <Label className="text-sm font-medium text-gray-600">Priority</Label>
+                                      <div className="mt-1">
+                                        <Badge variant={
+                                          selectedIncident.priority === 'high' ? 'destructive' :
+                                          selectedIncident.priority === 'medium' ? 'secondary' : 'default'
+                                        }>
+                                          {selectedIncident.priority.toUpperCase()}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Description */}
+                                  <div>
+                                    <Label className="text-sm font-medium text-gray-600">Description</Label>
+                                    <div className="mt-2 p-3 rounded-lg bg-gray-50 border">
+                                      <p className="text-sm whitespace-pre-wrap">{selectedIncident.description}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Reporter Info */}
+                                  {!selectedIncident.isAnonymous && selectedIncident.reporterName && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div>
+                                        <Label className="text-sm font-medium text-gray-600">Reporter Name</Label>
+                                        <p className="text-sm mt-1">{selectedIncident.reporterName}</p>
+                                      </div>
+                                      <div>
+                                        <Label className="text-sm font-medium text-gray-600">Contact Info</Label>
+                                        <p className="text-sm mt-1">{selectedIncident.contactInfo || 'Not provided'}</p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Comments Section */}
+                                  <div className="border-t pt-4">
+                                    <div className="flex items-center justify-between mb-4">
+                                      <Label className="text-sm font-medium text-gray-600">
+                                        Comments & Corrective Actions
+                                      </Label>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setCommentDialogOpen(true);
+                                          setViewDialogOpen(false);
+                                        }}
+                                      >
+                                        <MessageSquare className="w-4 h-4 mr-2" />
+                                        Add Comment
+                                      </Button>
+                                    </div>
+                                    
+                                    {/* Display Comments */}
+                                    <div className="space-y-3 max-h-32 sm:max-h-40 overflow-y-auto">
+                                      {comments && comments.length > 0 ? (
+                                        comments.map((comment) => (
+                                          <div key={comment.id} className="p-3 rounded-lg bg-gray-50 border">
+                                            <div className="flex items-start justify-between mb-2">
+                                              <div className="flex items-center gap-2">
+                                                <User className="w-4 h-4 text-gray-500" />
+                                                <span className="text-sm font-medium">
+                                                  {comment.user.firstName} {comment.user.lastName}
+                                                </span>
+                                                <Badge variant="secondary" className="text-xs">
+                                                  {comment.user.role}
+                                                </Badge>
+                                              </div>
+                                              <span className="text-xs text-gray-500">
+                                                {format(new Date(comment.createdAt), 'MMM dd, yyyy HH:mm')}
+                                              </span>
+                                            </div>
+                                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                              {comment.content}
+                                            </p>
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <p className="text-sm text-gray-500 italic">
+                                          No comments yet. Add the first corrective action comment.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Action Buttons */}
+                                  <div className="flex gap-2 pt-4 border-t">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setStatusDialogOpen(true);
+                                        setViewDialogOpen(false);
+                                      }}
+                                    >
+                                      <Clock className="w-4 h-4 mr-2" />
+                                      Change Status
+                                    </Button>
+                                    <Button
+                                      variant={selectedIncident.isFlagged ? "destructive" : "outline"}
+                                      size="sm"
+                                      onClick={() => {
+                                        updateIncidentMutation.mutate({
+                                          id: selectedIncident.id,
+                                          updates: { isFlagged: !selectedIncident.isFlagged }
+                                        });
+                                        setViewDialogOpen(false);
+                                      }}
+                                      disabled={updateIncidentMutation.isPending}
+                                    >
+                                      <Flag className="w-4 h-4 mr-2" />
+                                      {selectedIncident.isFlagged ? "Remove Flag" : "Flag Incident"}
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setProofDialogOpen(true);
+                                        setViewDialogOpen(false);
+                                      }}
+                                    >
+                                      <Upload className="w-4 h-4 mr-2" />
+                                      Upload Proof
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-4">
+                                  <p className="text-sm text-gray-500">Loading incident details...</p>
+                                </div>
+                              )}
+
+                          {/* Delete Icon - Only for Admin */}
+                          {user?.role === 'admin' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (confirm('Are you sure you want to delete this incident?')) {
+                                  deleteIncidentMutation.mutate(incident.id);
+                                }
+                              }}
+                              title="Delete Incident"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile View */}
+          <div className="lg:hidden p-4 space-y-3">
+            {incidents?.length === 0 ? (
+              <div className="text-center py-8 text-slate-500">
+                <ClipboardList className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p className="text-sm">No incidents found</p>
+              </div>
+            ) : (
+              incidents?.map((incident) => (
+                <Card key={incident.id} className="border border-gray-200 shadow-sm bg-white">
+                  <CardContent className="p-3">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center">
+                        {incident.isFlagged && <Flag className="w-3 h-3 mr-1 text-red-500" />}
+                        <span className="font-medium text-sm">{incident.ovrId}</span>
+                      </div>
+                      <div className="flex gap-1">
+                        <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => {
+                                setSelectedIncident(incident);
+                                setViewDialogOpen(true);
+                              }}
+                            >
+                              <Eye className="w-3 h-3" />
+                            </Button>
+                          </DialogTrigger>
+                        </Dialog>
+                        {user?.role === 'admin' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-600 hover:text-red-700"
+                            onClick={() => deleteIncidentMutation.mutate(incident.id)}
+                            disabled={deleteIncidentMutation.isPending}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">{incident.facility?.nameEn || 'Unknown'}</span>
+                        <span className="text-gray-500">{format(new Date(incident.incidentDate), 'MMM dd')}</span>
+                      </div>
+                      <div className="text-gray-600">{incident.category?.name}</div>
+                      <div className="flex justify-between items-center pt-1">
+                        {getStatusBadge(incident.status)}
+                        {getPriorityBadge(incident.priority)}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Comment Dialog */}
+      <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Comment - {selectedIncident?.ovrId}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="comment">Corrective Action Comment</Label>
+              <Textarea
+                id="comment"
+                placeholder="Describe the corrective action taken or planned for this incident..."
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                rows={4}
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                Please provide details about actions taken to address this incident and prevent recurrence.
+              </p>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setCommentDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => {
+                  if (selectedIncident && newComment.trim()) {
+                    addCommentMutation.mutate({
+                      incidentId: selectedIncident.id,
+                      content: newComment.trim()
+                    });
+                  }
+                }}
+                disabled={addCommentMutation.isPending || !newComment.trim()}
+              >
+                {addCommentMutation.isPending ? "Adding..." : "Add Comment"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Status Change Dialog */}
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Status - {selectedIncident?.ovrId}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Current Status</Label>
+              <div className="mt-1">
+                <Badge variant={
+                  selectedIncident?.status === 'open' ? 'destructive' :
+                  selectedIncident?.status === 'under_review' ? 'secondary' :
+                  selectedIncident?.status === 'reviewed' ? 'default' : 'outline'
+                }>
+                  {selectedIncident?.status.toUpperCase().replace('_', ' ')}
+                </Badge>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="status">New Status</Label>
+              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select new status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="under_review">Under Review</SelectItem>
+                  <SelectItem value="reviewed">Reviewed</SelectItem>
+                  {user?.role === 'admin' && (
+                    <SelectItem value="closed">Closed</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => {
+                  if (selectedIncident && selectedStatus) {
+                    updateIncidentMutation.mutate({
+                      id: selectedIncident.id,
+                      updates: { status: selectedStatus }
+                    });
+                  }
+                }}
+                disabled={!selectedStatus || updateIncidentMutation.isPending}
+              >
+                {updateIncidentMutation.isPending ? "Updating..." : "Update Status"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Proof Upload Dialog */}
+      <Dialog open={proofDialogOpen} onOpenChange={setProofDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Supporting Evidence - {selectedIncident?.ovrId}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="proof">Select File</Label>
+              <Input
+                id="proof"
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                Supported formats: PDF, DOC, DOCX, JPG, PNG (Max 10MB)
+              </p>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setProofDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => {
+                  if (selectedIncident && proofFile) {
+                    uploadProofMutation.mutate({
+                      incidentId: selectedIncident.id,
+                      file: proofFile
+                    });
+                  }
+                }}
+                disabled={!proofFile || uploadProofMutation.isPending}
+              >
+                {uploadProofMutation.isPending ? "Uploading..." : "Upload"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
